@@ -1,0 +1,12 @@
+# Núcleo (obrigatório)
+numpy>=1.24
+Pillow>=10.0
+
+# Etapa 2 - chamadas de API (opcional)
+requests>=2.31
+
+# RAW/DNG - fortemente recomendado para a captura
+# rawpy>=0.19
+
+# Leitura de TIFF de 16 bits
+# tifffile>=2023.7

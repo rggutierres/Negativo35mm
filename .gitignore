@@ -1,0 +1,23 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Saídas de processamento
+comparacao_neg35/
+*_neg35/
+tools/amostras/
+tests/_tmp_saida/
+
+# Segredos - NUNCA versione chaves
+.env
+.env.*
+!.env.example
+*.key
+
+# Bundle de CAs gerado localmente (específico da máquina)
+ca-empresa.pem
+
+# Ambiente Python baixado pelo preparar_ambiente.py
+.venv/
+wheels/
+.tmp/
