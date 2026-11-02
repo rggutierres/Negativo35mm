@@ -5,8 +5,16 @@ __pycache__/
 # Saídas de processamento
 comparacao_neg35/
 *_neg35/
+saida/
 tools/amostras/
 tests/_tmp_saida/
+
+# Artefatos gerados pelos testes (imagens e pastas temporárias).
+# O sufixo "/" no padrão garante que só PASTAS sejam ignoradas: o script
+# tools/_teste_final.py continua versionado.
+tools/_teste_*/
+tools/_inspecao/
+tools/_teste_pastas*
 
 # Segredos - NUNCA versione chaves
 .env

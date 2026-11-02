@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>neg35 — negativo para positivo</title>
+<link rel="stylesheet" href="/web/estilo.css">
+</head>
+<body>
+
+<header class="topo">
+  <div class="marca">
+    <span class="logo">neg35</span>
+    <span class="sub">negativo 35mm &rarr; positivo &rarr; restauração</span>
+  </div>
+  <div class="pastas" id="pastas"></div>
+  <button class="icone" id="btn-config" title="Configurações">&#9881;</button>
+</header>
+
+<!-- aviso de janela desatualizada: só aparece se o servidor for mais antigo -->
+<section class="servidor-velho" id="servidor-velho" hidden></section>
+
+<!-- diagnóstico das pastas: só aparece quando há problema -->
+<section class="diagnostico" id="diagnostico" hidden></section>
+
+<!-- resultado do último trabalho: fica visível para poder ser relido -->
+<section class="resultado" id="resultado" hidden></section>
+
+<!-- barra de progresso -->
+<section class="progresso" id="progresso" hidden>
+  <div class="linha">
+    <strong id="prog-titulo">Convertendo…</strong>
+    <span class="etapa-selo" id="prog-etapa" hidden></span>
+    <span id="prog-contagem" class="mono"></span>
+  </div>
+  <div class="barra"><div class="preenche" id="prog-barra"></div></div>
+  <div class="linha secundaria">
+    <span id="prog-arquivo" class="mono"></span>
+    <button class="btn pequeno perigo" id="btn-parar">Parar</button>
+  </div>
+</section>
+
+<!-- abas -->
+<nav class="abas" id="abas">
+  <button class="aba ativa" data-aba="trabalho">Converter e restaurar</button>
+  <button class="aba" data-aba="comparar">Comparar</button>
+  <button class="aba" data-aba="falhas">Falha na Conversão para Positivo<span class="aba-conta" id="aba-conta-falhas" hidden></span></button>
+  <button class="aba" data-aba="falhas-restauro">Falha na Restauração<span class="aba-conta" id="aba-conta-restauro" hidden></span></button>
+  <button class="aba" data-aba="renomear">Renomear<span class="aba-conta" id="aba-conta-renomear" hidden></span></button>
+</nav>
+
+<main>
+  <div class="painel" id="painel-trabalho">
+  <!-- resumo -->
+  <section class="resumo" id="resumo"></section>
+
+  <!-- etapa 1: conversão -->
+  <section class="etapa" id="etapa-converter">
+    <div class="etapa-topo">
+      <h2>1. Converter para positivo</h2>
+      <span class="contador" id="cont-converter"></span>
+    </div>
+    <p class="ajuda" id="ajuda-converter"></p>
+    <button class="btn primario" id="btn-converter">Converter pendentes</button>
+  </section>
+
+  <!-- etapa 2: restauração -->
+  <section class="etapa" id="etapa-restaurar">
+    <div class="etapa-topo">
+      <h2>2. Restaurar com IA</h2>
+      <span class="contador" id="cont-restaurar"></span>
+    </div>
+    <p class="ajuda" id="ajuda-restaurar"></p>
+
+    <div class="acoes">
+      <button class="btn" id="btn-todos">Marcar todos</button>
+      <button class="btn" id="btn-nenhum">Desmarcar</button>
+      <label class="chk-inline">
+        <input type="checkbox" id="chk-forcar">
+        Forçar mesmo com máscara fraca
+      </label>
+      <label class="chk-inline">
+        <input type="checkbox" id="chk-restauradas">
+        Mostrar também as já restauradas
+      </label>
+    </div>
+
+    <div class="grade" id="grade"></div>
+
+    <div class="rodape-fixo" id="rodape">
+      <div class="custo">
+        <span id="sel-info">0 selecionadas</span>
+        <span class="mono" id="custo-info"></span>
+      </div>
+      <button class="btn primario grande" id="btn-restaurar" disabled>
+        Restaurar selecionadas
+      </button>
+    </div>
+  </section>
+
+  <section class="vazio" id="vazio" hidden></section>
+  </div><!-- /painel-trabalho -->
+
+  <!-- ============================ ABA COMPARAR ============================ -->
+  <div class="painel" id="painel-comparar" hidden>
+    <section class="etapa">
+      <div class="etapa-topo">
+        <h2>Comparar positivo e restaurado</h2>
+        <span class="contador" id="comp-contador"></span>
+      </div>
+      <p class="ajuda">
+        Busque pelo nome e marque as fotos que quer ver. A comparação mostra o
+        positivo (inversão local) e o resultado da IA na <b>mesma escala</b>,
+        para a diferença ser de conteúdo e não de zoom.
+      </p>
+
+      <div class="comp-controles">
+        <input id="comp-busca" type="search" spellcheck="false"
+               placeholder="buscar pelo nome (ex.: 133746, Expert, Pro)">
+        <button class="btn" id="comp-todas">Marcar todas</button>
+        <button class="btn" id="comp-nenhuma">Desmarcar</button>
+        <button class="btn primario" id="comp-mostrar">Comparar selecionadas</button>
+      </div>
+
+      <div class="comp-filtros">
+        <label class="chk-inline">
+          <input type="checkbox" id="comp-so-restauradas" checked>
+          só as que já têm restaurada
+        </label>
+        <span class="mono" id="comp-dica"></span>
+      </div>
+
+      <div class="comp-lista" id="comp-lista"></div>
+    </section>
+
+    <section id="comp-resultado"></section>
+  </div><!-- /painel-comparar -->
+
+  <!-- ================= falhas na conversão ================= -->
+  <div class="painel" id="painel-falhas" hidden>
+    <section class="cartao">
+      <h2>Falha na Conversão para Positivo</h2>
+      <p class="dica" id="falhas-resumo"></p>
+      <p class="dica">Um negativo aparece aqui quando <b>não gerou positivo</b>.
+        Isso costuma ser arquivo corrompido, incompleto na nuvem, ou em formato
+        que o decodificador não abre. Use <b>Diagnosticar</b> para o programa
+        tentar abrir e registrar o motivo exato.</p>
+      <div class="linha-botoes">
+        <button class="btn" id="falhas-atualizar">Atualizar lista</button>
+        <button class="btn" id="falhas-diagnosticar-todas">Diagnosticar todas</button>
+        <button class="btn" id="falhas-copiar">Copiar lista</button>
+      </div>
+    </section>
+
+    <section id="falhas-lista"></section>
+  </div><!-- /painel-falhas -->
+
+  <!-- ================= falhas na restauração ================= -->
+  <div class="painel" id="painel-falhas-restauro" hidden>
+    <section class="cartao">
+      <h2>Falha na Restauração</h2>
+      <p class="dica" id="restauro-resumo"></p>
+      <p class="dica">Aqui ficam as fotos que <b>têm positivo mas não foram
+        restauradas</b>. O caso mais comum é <b>máscara fraca</b>: o negativo
+        perdeu a correção de cor laranja (R/B abaixo de <span id="restauro-limite">2,5</span>).</p>
+      <p class="dica"><b>Atenção:</b> nesses casos a IA não recupera a foto —
+        ela <b>inventa detalhes</b>, e o resultado engana. Forçar é pago
+        (cerca de US$ 0,04 por foto) e o resultado tende a não ser fiel.</p>
+      <div class="linha-botoes">
+        <button class="btn" id="restauro-atualizar">Atualizar lista</button>
+        <button class="btn" id="restauro-marcar-todas">Marcar todas</button>
+        <button class="btn primario" id="restauro-forcar-selecionadas" disabled>
+          Forçar selecionadas
+        </button>
+        <button class="btn" id="restauro-copiar">Copiar lista</button>
+      </div>
+    </section>
+
+    <section id="restauro-lista"></section>
+  </div><!-- /painel-falhas-restauro -->
+
+  <!-- ================= renomear (etiquetar as tiras) ================= -->
+  <div class="painel" id="painel-renomear" hidden>
+    <section class="cartao">
+      <h2>Renomear as fotos de uma tira</h2>
+      <p class="dica">Use para <b>documentar os negativos</b>: escreva na etiqueta
+        física da tira (ex.: <span class="mono">filme1-tira1</span>) e repita
+        aqui. O prefixo entra na frente do nome de cada foto.</p>
+
+      <div class="campo-renomear">
+        <label for="renomear-prefixo">Prefixo da tira</label>
+        <input id="renomear-prefixo" spellcheck="false"
+               placeholder="filme1-tira1" autocomplete="off">
+        <span class="dica" id="renomear-aviso"></span>
+      </div>
+
+      <div class="linha-botoes">
+        <button class="btn" id="renomear-atualizar">Atualizar lista</button>
+        <button class="btn" id="renomear-marcar-todas">Marcar todas</button>
+        <button class="btn primario" id="renomear-aplicar" disabled>
+          Renomear selecionadas
+        </button>
+      </div>
+      <p class="dica" id="renomear-resumo"></p>
+    </section>
+
+    <section id="renomear-lista"></section>
+  </div><!-- /painel-renomear -->
+</main>
+
+<!-- visualizador -->
+<div class="visor" id="visor" hidden>
+  <button class="fechar" id="visor-fechar">&times;</button>
+  <div class="visor-corpo" id="visor-corpo">
+    <!-- O wrapper tem exatamente o tamanho da imagem, para a caixa de recorte
+         poder ser posicionada em PORCENTAGEM: assim a coordenada não depende do
+         zoom nem do tamanho da tela. -->
+    <div class="visor-fig" id="visor-fig">
+      <img id="visor-img" alt="">
+      <div class="corte" id="visor-corte" hidden>
+        <div class="corte-alca" data-borda="topo"></div>
+        <div class="corte-alca" data-borda="base"></div>
+        <div class="corte-alca" data-borda="esq"></div>
+        <div class="corte-alca" data-borda="dir"></div>
+        <div class="corte-grade"></div>
+      </div>
+    </div>
+  </div>
+  <div class="visor-info">
+    <span id="visor-nome" class="mono"></span>
+    <span class="visor-botoes">
+      <button class="btn pequeno" id="visor-comparar" hidden>Comparar com a restaurada</button>
+      <button class="btn pequeno" id="visor-rotacionar" hidden>Rotacionar 90°</button>
+      <span class="giro-fino" id="visor-giro-fino" hidden>
+        <button class="btn pequeno" id="visor-girar-menos"
+                title="Girar 1 grau no sentido anti-horário">&minus;1°</button>
+        <span class="mono giro-valor" id="visor-giro-valor">0,0°</span>
+        <button class="btn pequeno" id="visor-girar-mais"
+                title="Girar 1 grau no sentido horário">+1°</button>
+        <button class="btn pequeno" id="visor-girar-zero"
+                title="Voltar o ângulo para zero">Zerar</button>
+      </span>
+      <button class="btn pequeno" id="visor-salvar-rotacao" hidden>Salvar rotação</button>
+      <button class="btn pequeno" id="visor-recortar" hidden>Recortar</button>
+      <button class="btn pequeno" id="visor-olhos" hidden>Olhos vermelhos</button>
+      <button class="btn pequeno" id="visor-desfazer" hidden
+              title="Volta a imagem ao estado anterior (antes do último ajuste)">Desfazer</button>
+      <button class="btn pequeno primario" id="visor-cortar" hidden>Cortar</button>
+      <button class="btn pequeno" id="visor-cancelar-corte" hidden>Cancelar</button>
+      <button class="btn pequeno" id="visor-menos">&minus;</button>
+      <button class="btn pequeno" id="visor-mais">+</button>
+      <button class="btn pequeno" id="visor-100">100%</button>
+    </span>
+  </div>
+</div>
+
+<!-- comparação lado a lado: positivo x restaurado -->
+<div class="visor" id="comparador" hidden>
+  <button class="fechar" id="comp-fechar">&times;</button>
+  <div class="visor-corpo" id="comp-corpo">
+    <img id="comp-img" alt="positivo e restaurado lado a lado">
+  </div>
+  <div class="visor-info">
+    <span id="comp-nome" class="mono"></span>
+    <span class="mono" id="comp-legenda">esquerda: positivo (inversão local) &nbsp;·&nbsp; direita: restaurado pela IA</span>
+    <span class="visor-botoes">
+      <button class="btn pequeno" id="comp-menos">&minus;</button>
+      <button class="btn pequeno" id="comp-mais">+</button>
+      <button class="btn pequeno" id="comp-100">Ajustar</button>
+    </span>
+  </div>
+</div>
+
+<!-- configurações -->
+<div class="modal" id="modal" hidden>
+  <div class="modal-caixa">
+    <h2>Configurações</h2>
+    <p class="ajuda-modal">
+      Os valores abaixo já vêm nos padrões recomendados. Você só precisa mexer
+      aqui para trocar as pastas ou afinar o resultado de um filme específico.
+    </p>
+
+    <h3 class="grupo">Pastas</h3>
+    <div class="campo"><label>Fotos originais (RAW / JPG)</label>
+      <input id="cfg-origem" spellcheck="false">
+      <span class="dica">onde estão os arquivos que saem do celular</span></div>
+    <div class="campo"><label>Positivos (inversão local, grátis)</label>
+      <input id="cfg-positivo" spellcheck="false">
+      <span class="dica">onde o programa grava o negativo já invertido</span></div>
+    <div class="campo"><label>Restauradas (pela IA, pago)</label>
+      <input id="cfg-restaurada" spellcheck="false">
+      <span class="dica">onde a IA grava o resultado final</span></div>
+
+    <h3 class="grupo">Ajustes da conversão</h3>
+    <div class="campo">
+      <label>Filme</label>
+      <select id="cfg-filme">
+        <option value="generico">Genérico / não sei qual é &nbsp;— recomendado</option>
+        <option value="gold200">Kodak Gold 200</option>
+        <option value="ultramax400">Kodak UltraMax 400</option>
+        <option value="portra400">Kodak Portra 400</option>
+        <option value="ektar100">Kodak Ektar 100</option>
+        <option value="superia400">Fujifilm Superia 400</option>
+        <option value="cinestill800t">CineStill 800T</option>
+        <option value="hp5">Ilford HP5 (preto e branco)</option>
+        <option value="tri-x400">Kodak Tri-X 400 (preto e branco)</option>
+        <option value="pretoebranco">Outro preto e branco</option>
+      </select>
+      <span class="dica">corrige a temperatura da emulsão. "Genérico" funciona
+        bem; escolher o filme certo ajuda na cor.</span>
+    </div>
+
+    <div class="linha-campos">
+      <div class="campo"><label>Saturação <span class="rec"></span></label>
+        <input id="cfg-saturacao" type="number" step="0.05" min="0.5" max="2">
+        <span class="dica">1 = neutro · acima de 1,4 deixa a pele
+          alaranjada</span></div>
+      <div class="campo"><label>Nitidez <span class="rec"></span></label>
+        <input id="cfg-nitidez" type="number" step="0.05" min="0" max="2">
+        <span class="dica">0 = desligado · muito alto realça o grão do
+          filme</span></div>
+      <div class="campo"><label>Balanço de branco <span class="rec"></span></label>
+        <input id="cfg-balanco" type="number" step="0.05" min="0" max="1">
+        <span class="dica">0 = não corrige · 1 = corrige tudo (pode apagar o
+          tom de época)</span></div>
+    </div>
+
+    <h3 class="grupo">Curva de tom</h3>
+    <p class="explica">
+      Sem curva, o positivo fica <b>lavado</b> (é o dado linear do filme indo
+      direto para a tela). A curva ancora a mediana da imagem num alvo.
+      <b>Deixe ligada e no alvo 0,50.</b>
+    </p>
+    <div class="linha-campos">
+      <div class="campo"><label>Curva: alvo (mediana) <span class="rec"></span></label>
+        <input id="cfg-curva-alvo" type="number" step="0.05" min="0.3" max="0.7">
+        <span class="dica">menor escurece, maior clareia</span></div>
+      <div class="campo"><label>Lado máx. de envio (px) <span class="rec"></span></label>
+        <input id="cfg-max-lado" type="number" step="128" min="512">
+        <span class="dica">Mandar maior <b>não melhora</b>: o modelo reduz
+          internamente</span></div>
+      <div class="campo"><label>Curva: gama fixo <span class="rec"></span></label>
+        <input id="cfg-curva-gamma" type="number" step="0.1" min="0">
+        <span class="dica">0 = calcula por foto (recomendado) · só mude para
+          forçar o mesmo contraste em todas</span></div>
+    </div>
+
+    <div class="campo"><label>Cache do Adobe (DNG reconvertidos)</label>
+      <input id="cfg-cache-adobe" spellcheck="false"
+             placeholder="vazio = pasta temporária do sistema">
+      <span class="dica">O Adobe regrava <b>sem compressão</b>: cada arquivo
+        fica com ~43 MB (o original tem ~14 MB). Vazio usa a pasta temporária
+        do sistema, que é o lugar próprio para dado descartável. Apagar esta
+        pasta é seguro — só custa tempo na próxima conversão.</span></div>
+
+    <h3 class="grupo">Liga / desliga</h3>
+    <label class="chk-linha">
+      <input type="checkbox" id="cfg-curva">
+      <span><b>Usar curva de tom</b><br>
+        <span class="dica">Deixe <b>marcado</b>. Desmarcado, o positivo sai
+        lavado.</span></span>
+    </label>
+    <label class="chk-linha">
+      <input type="checkbox" id="cfg-adobe">
+      <span><b>Usar Adobe DNG Converter</b><br>
+        <span class="dica">Deixe <b>marcado</b>. Conserta os DNG que o
+        decodificador normal recusa (alguns do Expert RAW saem com defeito).</span></span>
+    </label>
+    <label class="chk-linha">
+      <input type="checkbox" id="cfg-auto">
+      <span><b>Converter automaticamente ao abrir</b><br>
+        <span class="dica">Deixe <b>desmarcado</b> (recomendado). Marcado, o
+        programa começa a converter sozinho assim que a tela abre — e pode
+        parecer que está refazendo tudo, embora ele pule o que já tem
+        positivo.</span></span>
+    </label>
+
+    <label class="chk-linha">
+      <input type="checkbox" id="cfg-casar-exposicao">
+      <span><b>Clarear o resultado da IA</b><br>
+        <span class="dica">Deixe <b>marcado</b>. A IA devolve a foto mais escura
+        que o positivo (medido: 0,23 a menos na mediana). Marcado, o programa
+        clareia o resultado até casar com o positivo — <b>sem estourar o
+        branco</b>, o que limita quanto dá para clarear.</span></span>
+    </label>
+
+    <div class="campo" style="max-width:320px">
+      <label>Clarear: força <span class="rec"></span></label>
+      <input id="cfg-exposicao-forca" type="number" step="0.05" min="0" max="1">
+      <span class="dica">0,85 = padrão. 1,0 busca a exposição do positivo por
+        inteiro; o limite de segurança no realce continua valendo.</span>
+    </div>
+
+    <label class="chk-linha">
+      <input type="checkbox" id="cfg-dica">
+      <span><b>Medir a foto e enviar os números no prompt</b><br>
+        <span class="dica">Deixe <b>marcado</b>. O modelo não tem como saber a
+        exposição correta sozinho; o programa mede (mediana, sombras, cast de
+        cor) e envia no texto. Custa zero — é só texto a mais.</span></span>
+    </label>
+
+    <label class="chk-linha">
+      <input type="checkbox" id="cfg-recortar-bordas">
+      <span><b>Recortar a borda do filme (furinhos e quadro vizinho)</b><br>
+        <span class="dica">Deixe <b>marcado</b>. O programa acha o quadro do
+        negativo e corta o resto <b>antes</b> de enviar. Usa a proporção 3:2 do
+        filme 35mm como trava: se não bater, <b>não corta</b> — melhor sobrar
+        borda que perder foto.</span></span>
+    </label>
+
+    <label class="chk-linha">
+      <input type="checkbox" id="cfg-limpar-borda-prompt">
+      <span><b>Pedir à IA para não desenhar a borda do filme</b><br>
+        <span class="dica">Deixe <b>marcado</b>. Acrescenta ao prompt a instrução
+        de remover a borda, os furinhos e o pedaço do quadro vizinho, e ajusta a
+        regra "não cortar" para valer só para a foto. Medido: <b>o prompt
+        sozinho não basta</b> — a IA mantém a borda; ele acompanha o recorte
+        acima, que é quem remove.</span></span>
+    </label>
+
+    <div class="campo" style="max-width:320px">
+      <label>Folga de borda a manter <span class="rec"></span></label>
+      <input id="cfg-recorte-margem" type="number" step="0.01" min="0" max="0.2">
+      <span class="dica">0 = encosta no quadro. 0,02 deixa 2% de borda de
+        cada lado. Use se preferir uma margem de segurança.</span>
+    </div>
+
+    <div class="modal-acoes">
+      <button class="btn" id="modal-padroes">Restaurar recomendados</button>
+      <button class="btn" id="modal-cancelar">Cancelar</button>
+      <button class="btn primario" id="modal-salvar">Salvar</button>
+    </div>
+    <p class="nota" id="cfg-nota"></p>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="/web/app.js"></script>
+</body>
+</html>

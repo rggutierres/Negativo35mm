@@ -1,54 +1,65 @@
 # neg35 — negativo 35mm → positivo restaurado
 
 Fotografa um negativo de filme, transforma em positivo com matemática de cor
-correta e restaura com IA. Feito para o seu fluxo: você fotografa em
-**JPG + DNG**, e o programa cuida do resto.
+correta e restaura com IA.
 
 ```bash
 # Preparar o ambiente (uma vez) -- cria .venv com numpy, Pillow, rawpy e requests
 python tools/preparar_ambiente.py
 python tools/instalar_wheels.py
 
-# O fluxo do dia a dia
+# Interface gráfica (recomendado)
+.venv\Scripts\python.exe tools\app.py
+
+# Ou a linha de comando
 .venv\Scripts\python.exe tools\lote.py
 ```
 
 ---
 
-## O fluxo em lote (`tools/lote.py`)
+## Interface web (`tools/app.py`)
 
-É o ponto de entrada. Ele:
+Abre em **http://127.0.0.1:8765/**. Faz o fluxo inteiro numa tela:
 
-1. **Lê ou cria o `.env`** — pastas, chave de API, modelo e prompt
-2. **Mostra as pastas** e deixa você confirmar ou trocar (Enter mantém)
-3. **Lista só o que falta** — compara a origem com a pasta de destino pelo
-   nome e esconde o que já foi convertido
-4. **Você escolhe** — `1,3-5`, `todos`, ou `a` para abortar
-5. **Mostra o custo estimado** antes de qualquer chamada paga
-6. Ao confirmar: gera o **positivo local** (grátis) e chama a **IA** (paga)
+1. **Ao abrir, compara** a pasta de origem com a de positivos e a de restaurados
+2. **Converte automaticamente** tudo que ainda não tem positivo, com barra de
+   progresso: `N de M`, etapa atual e nome do arquivo
+3. Mostra **só os que ainda não foram restaurados**, em grade com miniatura
+4. **Clicar na miniatura abre a imagem grande**, com zoom
+5. **Caixa de seleção** por foto (`Marcar todos` / `Desmarcar`)
+6. Mostra o **custo estimado** antes de gastar
+7. Botão **Restaurar selecionadas** chama a IA só nas marcadas
+8. Engrenagem abre as **configurações** (pastas, saturação, curva, Adobe), que
+   vão para o `.env`
+
+Sem dependências novas: servidor com `http.server` da biblioteca padrão e front
+em HTML/CSS/JS puro, sem framework e sem CDN. Motivo: neste ambiente o `pip`
+trava (proxy + `%TEMP%` bloqueado), então evitar instalação foi decisão de
+projeto, não preferência.
+
+Detalhes em [docs/interface-web.md](docs/interface-web.md).
+
+---
+
+## Linha de comando (`tools/lote.py`)
+
+O mesmo fluxo, em texto — útil para lote grande ou para depurar.
 
 ```
-Pasta: E:\Bkp\GoogleDrive\Negativo35mm\RAW
-8 foto(s) na origem
-2 já com restauradas -- ignoradas
-6 a processar
-
-  #  arquivo                  fonte   MB
-  1  20261012_100136          DNG   17.8
-  2  20261012_100151          DNG   17.6
+Pastas de trabalho (Enter mantém, ou digite um caminho novo):
+  1/3 origem (os .dng/.jpg):
+    atual: E:\Bkp\GoogleDrive\Negativo35mm\RAW
   ...
+  6 a processar
 
 Quais processar?  1,3-5 | todos | a
 
   fotos selecionadas : 6
-  modelo             : google/gemini-2.5-flash-image
   custo por imagem   : US$ 0.0387  (consulta ao OpenRouter)
-  CUSTO ESTIMADO     : US$ 0.232   (~R$ 1.28 ao câmbio de 5,5)
+  CUSTO ESTIMADO     : US$ 0.232
 
   Confirma? (s/n):
 ```
-
-### Opções
 
 ```bash
 --tudo                  processa tudo que falta, sem perguntar

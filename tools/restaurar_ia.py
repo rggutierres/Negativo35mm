@@ -147,7 +147,10 @@ def main() -> int:
         return 1
 
     dt = time.time() - t0
-    restaurado = core.normalizar(resposta_srgb, linear=False)
+    # A resposta vem em sRGB. O resto deste arquivo trabalha em luz linear, então
+    # convertemos -- mas de forma EXPLÍCITA. `normalizar(resposta, linear=False)`
+    # também decodifica o gama, e o resultado acabava escuro (metade do brilho).
+    restaurado = core.srgb_para_linear(core.para_float01(resposta_srgb))
     print(f"recebido : {restaurado.shape[1]}x{restaurado.shape[0]} em {dt:.1f}s")
 
     # --- métricas de antes/depois

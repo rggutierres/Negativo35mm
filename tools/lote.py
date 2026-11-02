@@ -34,10 +34,13 @@ import numpy as np
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
 
-from neg35 import api, config, core, pipeline, render  # noqa: E402
+from neg35 import adobe, api, config, core, curva, pipeline, render  # noqa: E402
 
 EXT_IMAGEM = {".dng", ".cr2", ".cr3", ".nef", ".arw", ".raf", ".orf", ".rw2",
               ".pef", ".jpg", ".jpeg", ".tif", ".tiff", ".png"}
+
+# Formatos RAW que o Adobe DNG Converter entende.
+EXT_RAW = {".dng", ".cr2", ".cr3", ".nef", ".arw", ".raf", ".orf", ".rw2", ".pef"}
 
 # Preço por imagem em USD, usado quando a consulta ao OpenRouter falha.
 CUSTO_FALLBACK = {
@@ -291,11 +294,37 @@ def processar(
     positivo_dir: Path,
     restaurado_dir: Path,
     com_ia: bool,
+    cache_adobe: Path | None = None,
 ) -> tuple[bool, str]:
     """Gera o positivo e, se pedido, restaura. Devolve (ok, mensagem)."""
     origem: Path = item["fonte"]
+    partes: list[str] = []
 
-    # --- Etapa 1: inversão local (grátis)
+    # --- Etapa 1a: passar pelo Adobe, quando o LibRaw não decodifica
+    #
+    # O Adobe lê com tolerância o bloco JPEG defeituoso que faz o LibRaw
+    # abortar, e regrava sem compressão. Medido: a máscara sai MELHOR (1,86 ->
+    # 3,35) e o arquivo passa a decodificar.
+    #
+    # REGRA IMPORTANTE: se a conversão falhar, seguimos com o ORIGINAL. O
+    # Adobe recusa arquivos que ele não reconhece (por exemplo um TIFF/DNG
+    # sintético de teste), e abortar por isso seria errado -- o original pode
+    # muito bem decodificar.
+    if cfg.usar_adobe and origem.suffix.lower() in EXT_RAW and cache_adobe is not None:
+        convertido: list[Path] = []
+        try:
+            convertido = adobe.converter(
+                [origem], cache_adobe, exe=cfg.adobe_exe or None
+            )[0]
+        except adobe.AdobeIndisponivel:
+            pass
+        except Exception:  # noqa: BLE001
+            pass
+        if convertido:
+            origem = convertido[0]
+            partes.append("via Adobe")
+
+    # --- Etapa 1b: inversão local (grátis)
     res = pipeline.desenvolver(
         origem,
         pipeline.Parametros(
@@ -305,10 +334,18 @@ def processar(
             balanco_forca=cfg.balanco,
         ),
     )
-    arq_positivo = positivo_dir / nome_positivo(item["nome"])
-    pipeline.salvar(res.positivo, arq_positivo, linear=True)
 
-    partes = [f"positivo ok ({arq_positivo.name})"]
+    # Curva de exibição: evita que o positivo saia lavado por transferir a
+    # escala linear do filme direto para sRGB.
+    c = None
+    if cfg.usar_curva:
+        c = lambda x, alvo=cfg.curva_alvo, g=cfg.curva_gamma, p=cfg.curva_preto: (
+            curva.aplicar(x, gamma=(g if g > 0 else None), alvo=alvo, preto=p)
+        )
+
+    arq_positivo = positivo_dir / nome_positivo(item["nome"])
+    pipeline.salvar(res.positivo, arq_positivo, linear=True, curva=c)
+    partes.append(f"positivo ok ({arq_positivo.name})")
     if res.meta.get("aviso"):
         partes.append(f"AVISO: {res.meta['aviso']}")
 
@@ -348,11 +385,18 @@ def processar(
     rest = api.Restauracao(
         provedor=cfg.provedor, modelo=cfg.modelo, prompt=cfg.prompt
     )
-    resposta = rest.restaurar(core.linear_para_srgb(envio))
-    restaurado = core.normalizar(resposta, linear=False)
+    # A IA espera sRGB. Aplicamos a MESMA curva de exibição, para que ela
+    # receba uma imagem na faixa natural -- mandar a escala linear crua faz o
+    # modelo devolver resultado escuro demais (medido: p50 0,87 -> 0,15).
+    resposta = rest.restaurar(c.aplicar(envio) if c is not None else core.linear_para_srgb(envio))
+    # A resposta já é sRGB. `para_float01` só ajusta escala -- `normalizar`
+    # decodificaria o gama e o arquivo sairia escuro (o mesmo bug que apareceu
+    # no servidor: o arquivo gravado saía com metade do brilho).
+    restaurado = core.para_float01(resposta)
 
     arq_restaurado = restaurado_dir / nome_restaurado(item["nome"])
-    pipeline.salvar(restaurado, arq_restaurado, linear=True)
+    # A resposta já é sRGB; não passa por curva nem por gama.
+    pipeline.salvar(restaurado, arq_restaurado, linear=False)
     partes.append(f"restaurado ok ({restaurado.shape[1]}x{restaurado.shape[0]})")
     return True, " | ".join(partes)
 
@@ -514,12 +558,34 @@ def main() -> int:
 
     # -- 6) processar
     titulo("Processando")
+
+    # Cache do Adobe: os DNG reconvertidos ficam aqui e são reusados nas
+    # próximas execuções (a conversão é lenta). O local vem do config, para
+    # não existir uma segunda regra aqui que possa divergir.
+    cache_adobe = config.pasta_cache_adobe(cfg) if cfg.usar_adobe else None
+    if cfg.usar_adobe:
+        if cache_adobe is None:
+            print("  Adobe DNG Converter: sem pasta de cache gravável — desativado")
+        elif adobe.disponivel(cfg.adobe_exe or None):
+            print(f"  Adobe DNG Converter: ativo (cache em {cache_adobe})")
+        else:
+            print("  Adobe DNG Converter: NÃO ENCONTRADO")
+            print("    instale em adobe.com/products/dng, ou aponte adobe_exe no .env")
+            print("    (os DNG com bloco defeituoso vão falhar)")
+            cache_adobe = None
+    else:
+        cache_adobe = None
+        print("  Adobe DNG Converter: desativado no .env")
+
+    print()
     ok_n = falhas = 0
     t_inicio = time.time()
     for i, it in enumerate(escolhidos, 1):
         print(f"[{i}/{len(escolhidos)}] {it['nome']}")
         try:
-            sucesso, msg = processar(it, cfg, positivo_dir, restaurado_dir, com_ia)
+            sucesso, msg = processar(
+                it, cfg, positivo_dir, restaurado_dir, com_ia, cache_adobe
+            )
             print(f"    {msg}")
             ok_n += 1 if sucesso else 0
         except api.RestaurarErro as e:

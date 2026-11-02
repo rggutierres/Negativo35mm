@@ -12,8 +12,8 @@ Pipeline em duas etapas independentes:
 Tudo aqui é float64 em espaço linear até a codificação final em sRGB.
 """
 
-from . import core, post, pipeline, synthetic
+from . import adobe, core, curva, pipeline, post, synthetic
 
-__all__ = ["core", "post", "pipeline", "synthetic", "__version__"]
+__all__ = ["adobe", "core", "curva", "pipeline", "post", "synthetic", "__version__"]
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

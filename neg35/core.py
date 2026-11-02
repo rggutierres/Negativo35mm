@@ -115,6 +115,47 @@ def normalizar(
     return a
 
 
+def para_float01(img) -> np.ndarray:
+    """
+    Converte QUALQUER entrada (PIL, uint8, float) para float64 [0,1], SEM
+    mexer em gama.
+
+    Só cuida de escala e de canais. NÃO decodifica nem codifica sRGB.
+
+    Existe porque `normalizar(..., linear=False)` -- apesar do nome do
+    parâmetro -- DECODIFICA o gama, e isso já causou três bugs nesta sessão:
+
+      1. a imagem enviada à IA ia ~3x mais escura que o positivo;
+      2. a resposta da IA, que já vem em sRGB, era decodificada de novo e o
+         arquivo gravado saía com metade do brilho;
+      3. a ida e volta sRGB->linear->sRGB não fechava.
+
+    Use esta função quando o dado já está no espaço de cor certo e você só
+    precisa dele em float. Use `normalizar` quando precisar CONVERTER para
+    luz linear (é o que o pipeline de inversão espera).
+    """
+    a = np.asarray(img)
+    if a.dtype == np.uint8:
+        a = a.astype(np.float64) / 255.0
+    elif not np.issubdtype(a.dtype, np.floating):
+        # inteiro de outra profundidade: assume 16 bits se passar de 255
+        if a.size and float(a.max()) > 255:
+            a = a.astype(np.float64) / 65535.0
+        else:
+            a = a.astype(np.float64) / 255.0
+    else:
+        a = a.astype(np.float64)
+        if a.size and float(a.max()) > 1.5:
+            a = a / 255.0
+
+    if a.ndim == 2:
+        a = np.stack([a, a, a], axis=-1)
+    if a.shape[-1] == 4:
+        a = a[..., :3]
+
+    return np.clip(a, 0.0, 1.0)
+
+
 def recortar(img: np.ndarray) -> np.ndarray:
     """
     Garante R,G,B float64 em [0,1]; remove canal alfa se existir.
@@ -123,7 +164,6 @@ def recortar(img: np.ndarray) -> np.ndarray:
     sRGB. Para dados já lineares use normalizar(img, linear=True).
     """
     a = normalizar(img, linear=False)
-
     if a.ndim == 2:
         a = np.stack([a, a, a], axis=-1)
     if a.shape[-1] == 4:

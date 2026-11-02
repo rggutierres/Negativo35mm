@@ -48,6 +48,15 @@ class Parametros:
     recorte_branco: float = 0.0
 
     balanco_forca: float = 0.85
+    # Método de balanço de branco:
+    #   "gray-world" (padrão) -- assume que a média da cena é cinza. Erra em
+    #       cena dominada por uma cor (folhagem deixa esverdeado), mas é
+    #       estável. É o padrão.
+    #   "base" -- usa o filme virgem como preto neutro. Em teoria é âncora
+    #       absoluta, mas MEDIMOS que piora: o preto do filme fica em ~0,001 e
+    #       a correção por canal vira divisão por ruído. Fica disponível para
+    #       experimentação, não use em produção sem conferir.
+    balanco_metodo: str = "gray-world"
     ponto_neutro: tuple[float, float, float] | None = None
     contraste_preto: float = 0.005
     contraste_branco: float = 0.995
@@ -102,6 +111,52 @@ def _aplicar_exif(img: np.ndarray, orientacao: int) -> np.ndarray:
     if orientacao == 8:
         return np.rot90(img, k=1)
     return img
+
+
+def carregar_srgb(caminho: str | Path) -> np.ndarray:
+    """
+    Lê a imagem e devolve os pixels COMO ESTÃO NO ARQUIVO, em sRGB [0,1].
+
+    Existe porque `carregar(..., para_linear=False)` NÃO fazia isto: ele
+    chamava `core.recortar`, que por sua vez chama `core.normalizar`, e essa
+    função SEMPRE devolve luz linear -- o parâmetro `linear` dela descreve a
+    ENTRADA, não a saída. Então o nome prometia sRGB e o valor entregue era
+    linear, cerca de 3,3x mais escuro na média.
+
+    Medido no positivo desta sessão:
+
+        bruto do arquivo (sRGB)                  0,6096
+        carregar(para_linear=True)               0,3386
+        carregar(para_linear=False)              0,3386   <- deveria ser 0,6096
+
+    O erro teve consequência real: a imagem enviada à IA ia ~3x mais escura
+    do que o positivo, e a IA devolvia escuro. Parecia que o modelo estava
+    escurecendo, quando ele apenas recebia escuro.
+
+    Use esta função quando precisar do dado de exibição (enviar para IA,
+    comparar com o arquivo salvo). Use `carregar` quando o destino for o
+    pipeline, que trabalha em luz linear.
+    """
+    from PIL import Image
+
+    caminho = Path(caminho)
+    if not caminho.exists():
+        raise FileNotFoundError(f"Arquivo não encontrado: {caminho}")
+
+    with Image.open(caminho) as im:
+        orientacao = 1
+        try:
+            orientacao = im.getexif().get(0x0112, 1)
+        except Exception:  # noqa: BLE001
+            pass
+        if im.mode != "RGB":
+            im = im.convert("RGB")
+        bruto = np.asarray(im)
+
+    bruto = _aplicar_exif(bruto, orientacao)
+    # Só normaliza a escala (0..255 -> 0..1). NÃO decodifica gama: o valor do
+    # arquivo JÁ é sRGB.
+    return np.clip(bruto.astype(np.float64) / 255.0, 0.0, 1.0)
 
 
 def carregar(caminho: str | Path, para_linear: bool = True) -> np.ndarray:
@@ -311,9 +366,14 @@ def desenvolver(
     meta["ponto_neutro"] = ref.tolist()
 
     if p.auto:
-        positivo = post.auto_balanco(
-            positivo, forca=p.balanco_forca, ponto_neutro=p.ponto_neutro
-        )
+        if p.balanco_metodo == "base":
+            positivo = post.balanco_pela_base(
+                positivo, lin, forca=p.balanco_forca
+            )
+        else:
+            positivo = post.auto_balanco(
+                positivo, forca=p.balanco_forca, ponto_neutro=p.ponto_neutro
+            )
         registrar("02_balanco", core.linear_para_srgb(positivo))
 
         positivo = post.esticar_contraste(
@@ -356,9 +416,12 @@ def desenvolver(
         rest = api.Restauracao(
             provedor=p.restaurar, modelo=p.modelo_ia, prompt=p.prompt_ia
         )
-        # A API trabalha em sRGB (é o que ela espera); voltamos a linear.
+        # A API trabalha em sRGB (é o que ela espera). A resposta também vem em
+        # sRGB, e `para_float01` só cuida de escala -- usar `normalizar` aqui
+        # decodificaria o gama e o resultado sairia escuro (bug já visto duas
+        # vezes: no envio e na gravação).
         resposta = rest.restaurar(core.linear_para_srgb(positivo))
-        resultado.restaurado = core.normalizar(resposta, linear=False)
+        resultado.restaurado = core.srgb_para_linear(core.para_float01(resposta))
         resultado.meta["restaurado_por"] = f"{p.restaurar}:{rest.modelo}"
         registrar("07_restaurado", core.linear_para_srgb(resultado.restaurado))
 
@@ -370,17 +433,28 @@ def desenvolver(
 
 
 # ----------------------------------------------------------------------
-def salvar(img: np.ndarray, caminho: str | Path, linear: bool = True) -> Path:
+def salvar(
+    img: np.ndarray,
+    caminho: str | Path,
+    linear: bool = True,
+    curva=None,
+) -> Path:
     """
     Salva float [0,1] como PNG.
 
-    linear=True (padrão): a entrada é LUZ LINEAR e será codificada para sRGB.
-        É o padrão porque o pipeline inteiro trabalha em linear.
+    linear=True (padrão): a entrada é LUZ LINEAR.
+        - se `curva` for passado, ele mapeia linear -> sRGB (curva de exibição);
+        - senão, aplica a codificação sRGB pura.
     linear=False: a entrada JÁ está em sRGB; salva como está.
 
-    O parâmetro é obrigatório de propósito. Um "detector automático" de gama
-    é frágil: uma foto em sRGB com mediana baixa (cena escura) seria
-    codificada duas vezes e sairia lavada. Melhor ser explícito.
+    O parâmetro `curva` é o que evita a imagem sair lavada. Codificar a luz
+    linear direto para sRGB é correto em teoria, mas negativo de filme tem
+    densidade baixa e o resultado fica claro demais. Passe um
+    neg35.curva.Curva (ou None para o comportamento antigo).
+
+    O parâmetro `linear` é obrigatório de propósito. Um "detector automático"
+    de gama é frágil: uma foto em sRGB com mediana baixa (cena escura) seria
+    codificada duas vezes e sairia lavada.
 
     Exceção: se a entrada já for uint8, ela é tratada como sRGB pronta e não
     é recodificada -- isso deixa os compositores de render.py
@@ -406,7 +480,10 @@ def salvar(img: np.ndarray, caminho: str | Path, linear: bool = True) -> Path:
     a = np.clip(a, 0.0, 1.0)
 
     if linear:
-        a = core.linear_para_srgb(a)
+        if curva is not None:
+            a = curva(a)
+        else:
+            a = core.linear_para_srgb(a)
 
     caminho = Path(caminho)
     caminho.parent.mkdir(parents=True, exist_ok=True)

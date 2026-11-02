@@ -15,6 +15,7 @@ Resultado: .venv/Scripts/python.exe com numpy, Pillow, rawpy e requests.
 from __future__ import annotations
 
 import json
+import os
 import ssl
 import subprocess
 import sys
@@ -24,9 +25,25 @@ from pathlib import Path
 RAIZ = Path(__file__).resolve().parent.parent
 WHEELS = RAIZ / "wheels"
 TMP = RAIZ / ".tmp"
-VENV = RAIZ / ".venv"
 CA = RAIZ / "ca-empresa.pem"
 PY313 = Path(r"C:\Program Files\Python313\python.exe")
+
+# ---------------------------------------------------------------------------
+# ONDE FICA O AMBIENTE -- e por que NÃO dentro do projeto
+#
+# MEDIDO nesta máquina: um ambiente virtual guardado dentro de C:\Temp grava
+# SOMENTE dentro de C:\Temp. Com as pastas de saída em E:, a conversão falhava
+# com "sem permissão de escrita (Permission denied)", mesmo com o ACL da pasta
+# liberado para "Usuários autenticados: Modify".
+#
+#   .venv\Scripts\python.exe (em C:\Temp)    -> gravar em E: = FALHOU (errno 13)
+#   C:\neg35\venv\Scripts\python.exe         -> gravar em E: = OK
+#   C:\Program Files\Python313\python.exe    -> gravar em E: = OK
+#
+# Mesmo usuário, mesma pasta, mesmo instante: o problema é o LUGAR do ambiente.
+# Por isso ele fica fora de C:\Temp sempre que possível.
+# ---------------------------------------------------------------------------
+VENV = Path(os.environ.get("NEG35_VENV") or r"C:\neg35\venv")
 
 # Pacote -> versão fixa (evita o resolutor e garante wheel disponível).
 # 'requests' vem com as dependências puras dele, senão a instalação offline
